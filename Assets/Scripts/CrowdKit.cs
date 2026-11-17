@@ -24,11 +24,12 @@ namespace Day113
                 var mpb = new MaterialPropertyBlock();
                 foreach (var rr in r.GetComponentsInChildren<Renderer>()) { rr.GetPropertyBlock(mpb); mpb.SetColor("_BaseColor", tint); rr.SetPropertyBlock(mpb); }
             }
+            PoseLib.CaptureRest(root, true); // 休みの姿勢を覚える（前の動きが残らないように）
             Pose(k.stand, 0);
         }
         public void Pose(AnimationClip c, float t)
         {
-            if (!c) return; c.SampleAnimation(root, t); rig.localPosition = Vector3.zero; rig.localRotation = baseLocal;
+            if (!c) return; PoseLib.Sample(c, root, t); // ビルドでも効くよう焼いた姿勢で当てる rig.localPosition = Vector3.zero; rig.localRotation = baseLocal;
         }
         public void Face(Vector3 dir) { dir.y = 0; if (dir.sqrMagnitude > 1e-5f) root.transform.rotation = Quaternion.LookRotation(dir.normalized); }
         /// 1フレーム分だけ目的地へ歩く。着いたら true

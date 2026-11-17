@@ -4,7 +4,7 @@ namespace Day113
     /// 先生の点数札：右腕を真上へ「ボン」と振り上げ、札は傾いて出てから揺れて止まる（Web版と同じ）。
     public class ScoreCard
     {
-        GameObject root; Transform stick, board, rig, upper, fore, hand;
+        GameObject root; Transform stick, board, fist, rig, upper, fore, hand;
         public bool Ok => upper && fore && hand;
 
         public static ScoreCard Make(Transform rig, int score)
@@ -19,7 +19,11 @@ namespace Day113
                 var g = GameObject.CreatePrimitive(t); Object.Destroy(g.GetComponent<Collider>()); g.transform.SetParent(parent, false);
                 g.transform.localPosition = lp; g.transform.localScale = ls; g.GetComponent<Renderer>().sharedMaterial = m; return g;
             }
-            c.stick = Prim(PrimitiveType.Cylinder, c.root.transform, Vector3.zero, new Vector3(.02f, .16f, .02f), Mat(new Color(.36f, .22f, .12f))).transform;
+            // 棒は札の下の縁で止める（札を突き抜けて見えないように）。長さ0.3m
+            c.stick = Prim(PrimitiveType.Cylinder, c.root.transform, Vector3.zero, new Vector3(.022f, .15f, .022f), Mat(new Color(.36f, .22f, .12f))).transform;
+            // 棒を握る手（握りこぶし）。肌の色は先生の手の素材から取る
+            var skin = new Color(.86f, .66f, .5f);
+            c.fist = Prim(PrimitiveType.Sphere, c.root.transform, Vector3.zero, new Vector3(.075f, .095f, .075f), Mat(skin)).transform;
             c.board = new GameObject("Board").transform; c.board.SetParent(c.root.transform, false);
             Prim(PrimitiveType.Cube, c.board, Vector3.zero, new Vector3(.4f, .27f, .012f), Mat(new Color(.75f, .22f, .17f)));
             Prim(PrimitiveType.Cube, c.board, Vector3.zero, new Vector3(.372f, .242f, .016f), Mat(new Color(.98f, .97f, .94f)));
@@ -54,9 +58,12 @@ namespace Day113
             Vector3 dir = u < .5f ? Vector3.Slerp(down, mid, u * 2f) : Vector3.SlerpUnclamped(mid, up, u * 2f - 1f);
             Aim(upper, fore, dir); Aim(fore, hand, dir);
             root.SetActive(u > .12f);
-            Vector3 b = hand.position + dir * .03f;
-            stick.SetPositionAndRotation(b + dir * .16f, Quaternion.FromToRotation(Vector3.up, dir));
-            board.SetPositionAndRotation(b + dir * .4f, Quaternion.LookRotation(-toCam) * Quaternion.Euler(0, 0, tiltDeg));
+            Vector3 g = hand.position + dir * .07f;              // 握る位置（手のひら）
+            var face = Quaternion.LookRotation(-toCam);
+            Vector3 back = -toCam * .012f;                      // 棒は札の少し後ろを通す
+            fist.SetPositionAndRotation(g, Quaternion.FromToRotation(Vector3.up, dir));
+            stick.SetPositionAndRotation(g + dir * .15f + back, Quaternion.FromToRotation(Vector3.up, dir)); // 手から札の下の縁まで
+            board.SetPositionAndRotation(g + dir * (.3f + .135f) + back * .5f, face * Quaternion.Euler(0, 0, tiltDeg));
         }
 
         static void Aim(Transform a, Transform b, Vector3 dir)

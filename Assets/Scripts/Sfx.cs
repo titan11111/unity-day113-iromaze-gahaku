@@ -7,7 +7,7 @@ namespace Day113
     {
         const int SR = 44100;
         AudioSource brush, one;
-        AudioClip squish, plop, tap, wash, chime, low;
+        AudioClip squish, plop, tap, wash, chime, low, bon; AudioClip[] voice;
         float brushTarget, brushVol, brushPitch = 1;
 
         void Awake()
@@ -17,6 +17,9 @@ namespace Day113
             brush.clip = MakeBrush(); brush.Play();
             squish = MakeSquish(); plop = MakePlop(); tap = MakeTap(); wash = MakeWash();
             chime = MakeNotes("chime", new[] { 523.25f, 659.25f, 783.99f, 1046.5f }, .11f); low = MakeNotes("low", new[] { 330f, 262f }, .09f);
+            bon = MakeBon();
+            // 先生の声「ポ」：藍原（低い）・方円（中）・ふわり（高い）
+            voice = new[] { MakePo("po0", 150f), MakePo("po1", 245f), MakePo("po2", 360f) };
         }
 
         public void Squish() { one.PlayOneShot(squish, .55f); }
@@ -25,6 +28,14 @@ namespace Day113
         public void Wash() { one.PlayOneShot(wash, .5f); }
         public void Chime() { one.PlayOneShot(chime, .5f); }
         public void Locked() { one.PlayOneShot(low, .45f); }
+        /// しゃべり声「ポポポ」：1文字ぶん。高さを少し揺らして単調にしない
+        public void Voice(int who)
+        {
+            if (voice == null || who < 0 || who >= voice.Length) return;
+            one.PlayOneShot(voice[who], .42f + Random.value * .08f);
+        }
+        /// 札を上げる「ボン」
+        public void Bon() { one.PlayOneShot(bon, .7f); }
 
         /// 筆の速さ（0〜1）。0で無音。絵の具が減るとかすれた高い音に寄る
         public void Brush(float speed01, float load)
@@ -110,6 +121,34 @@ namespace Day113
                 }
             }
             return Clip(name, d);
+        }
+
+        static AudioClip MakePo(string name, float f0)
+        {
+            // 口を開けて閉じる短い母音っぽい音（矩形寄りの波＋素早い減衰）。70ミリ秒
+            int n = (int)(SR * .07f); var d = new float[n]; float ph = 0;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)n, f = f0 * (1.08f - .12f * t); ph += f / SR;
+                float w = Mathf.Sin(ph * 6.2832f) + .35f * Mathf.Sin(ph * 2 * 6.2832f) + .18f * Mathf.Sin(ph * 3 * 6.2832f);
+                float env = Mathf.Min(1, i / 120f) * Mathf.Pow(1 - t, 1.6f);
+                d[i] = Mathf.Clamp(w * 1.2f, -1, 1) * env * .5f;
+            }
+            return Clip(name, d);
+        }
+
+        static AudioClip MakeBon()
+        {
+            // 「ボン」：低い胴鳴り＋札の紙が鳴る短いノイズ
+            int n = (int)(SR * .35f); var d = new float[n]; var r = new System.Random(5); float ph = 0;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)n, f = Mathf.Lerp(150, 70, Mathf.Sqrt(t)); ph += f / SR;
+                float body = Mathf.Sin(ph * 6.2832f) * Mathf.Exp(-t * 7f);
+                float paper = (float)(r.NextDouble() * 2 - 1) * Mathf.Exp(-t * 40f) * .45f;
+                d[i] = (body + paper) * Mathf.Min(1, i / 40f) * .9f;
+            }
+            return Clip("bon", d);
         }
 
         static AudioClip MakeWash()

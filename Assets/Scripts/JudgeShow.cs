@@ -49,8 +49,13 @@ namespace Day113
 
             var layer = new VisualElement(); layer.style.position = Position.Absolute; layer.style.left = layer.style.right = layer.style.top = layer.style.bottom = 0;
             layer.pickingMode = PickingMode.Position; uiRoot.parent.Add(layer);
+            var jfont = Resources.Load<Font>("Fonts/MPLUS1p-Regular"); // Web版は端末の日本語フォントが使えない → 同梱フォントを指定
+            if (jfont) layer.style.unityFontDefinition = new StyleFontDefinition(FontDefinition.FromFont(jfont));
             bool tapped = false; layer.RegisterCallback<PointerDownEvent>(_ => tapped = true);
 
+            // 人物の「休み」の姿勢を覚える（ビルドでも姿勢が戻るように。PoseLib）
+            PoseLib.CaptureRest(jr.gameObject, true);
+            for (int k = 0; k < 3; k++) { cur[k] = jr.stand[k]; curT[k] = 0; }
             var camT = jr.cam.transform; Vector3 camHome = camT.position; Quaternion camRot = camT.rotation;
             var homes = new Vector3[3]; var homeRot = new Quaternion[3];
             // 先生は壁ぎわに並んで待つ（絵の前をあける）
@@ -97,7 +102,7 @@ namespace Day113
                 tapped = false;
                 var bubble = JudgeShowUI.Bubble(layer, Judges.Name[i] + "（" + Judges.Role[i] + "）", comments[i], out var scoreL, out var bodyL);
                 scoreL.style.visibility = Visibility.Hidden;
-                yield return Typewriter(bodyL, "…じ〜っ……", () => tapped);
+                yield return Typewriter(bodyL, "…じ〜っ……", () => tapped, () => sfx?.Voice(ii));
                 yield return Wait(1.2f, () => tapped);
                 DebugShot?.Invoke($"judge_{i}_inspect");
                 yield return Wait(1.2f, () => tapped);
@@ -107,7 +112,7 @@ namespace Day113
                 yield return Turn(r, baseRot[i], .35f);
                 yield return Wait(.5f, () => false);
                 tapped = false; sfx?.Tap();
-                yield return Typewriter(bodyL, comments[i], () => tapped);
+                yield return Typewriter(bodyL, comments[i], () => tapped, () => sfx?.Voice(ii));
                 yield return Wait(.5f, () => tapped);
                 DebugShot?.Invoke($"judge_{i}_comment");
                 // 札ボン：引きながら、右腕で点数札を振り上げる＋右下の点数がポン
@@ -116,7 +121,7 @@ namespace Day113
                 if (!card.Ok) Debug.LogWarning("[D113] 札：右腕の骨が見つからない " + r.name);
                 scoreL.style.visibility = Visibility.Visible;
                 host.StartCoroutine(Stamp(scoreL)); host.StartCoroutine(CountUp(scoreL, scores[i], () => false));
-                sfx?.Plop(); sfx?.Chime();
+                sfx?.Bon();
                 tapped = false; float ct = 0; bool shot = false;
                 while (ct < 2.2f && !(tapped && ct > .6f))
                 {
@@ -125,8 +130,8 @@ namespace Day113
                     if (!shot && ct > .9f) { shot = true; DebugShot?.Invoke($"judge_{i}_card"); }
                     yield return null;
                 }
-                for (float dt2 = 0; dt2 < .2f; dt2 += Time.deltaTime) { Samp(jr, jr.stand[i], 0); card.Apply(1f - dt2 / .2f, 0, camT.position); yield return null; }
-                card.Destroy(); Samp(jr, jr.stand[i], 0);
+                for (float dt2 = 0; dt2 < .25f; dt2 += Time.deltaTime) { Samp(jr, jr.stand[i], 0); card.Apply(Mathf.Max(0f, 1f - dt2 / .25f), 0, camT.position); yield return null; }
+                card.Destroy(); Samp(jr, jr.stand[i], 0); // 休みの姿勢へ戻してから立ち姿 → 腕は下りる
                 bubble.RemoveFromHierarchy();
                 // 元の場所へ
                 yield return Turn(r, Quaternion.LookRotation(Flat(homes[i] - spot)) * baseRot[i], .3f);
@@ -174,15 +179,26 @@ namespace Day113
             Running = false;
         }
 
-        /// ポーズだけ当てて、3人それぞれのルートの位置と向きは保つ（クリップは「先生3人の親」基準のパス）
+        /// ポーズを当てる。3人それぞれ「今の動き」を覚えておき、毎回 休み→3人分 の順に当てる（1人だけ動かしても他の2人が崩れない）。
+        /// クリップは「先生3人の親」基準のパスなので、3人のルートの位置と向きは保つ。
+        static readonly AnimationClip[] cur = new AnimationClip[3]; static readonly float[] curT = new float[3];
         static void Samp(JudgeRig jr, AnimationClip c, float t)
         {
             if (!c) return;
+            int who = Owner(jr, c); if (who >= 0) { cur[who] = c; curT[who] = t; }
             var p = new Vector3[3]; var q = new Quaternion[3]; var sc = new Vector3[3];
             for (int k = 0; k < 3; k++) { var tr = jr.rigs[k]; p[k] = tr.position; q[k] = tr.rotation; sc[k] = tr.localScale; }
-            c.SampleAnimation(jr.gameObject, t);
+            if (who < 0) PoseLib.Sample(c, jr.gameObject, t);
+            else { bool first = true; for (int k = 0; k < 3; k++) if (cur[k]) { PoseLib.Sample(cur[k], jr.gameObject, curT[k], first); first = false; } }
             for (int k = 0; k < 3; k++) { var tr = jr.rigs[k]; tr.SetPositionAndRotation(p[k], q[k]); tr.localScale = sc[k]; }
         }
+        static int Owner(JudgeRig jr, AnimationClip c)
+        {
+            for (int k = 0; k < 3; k++)
+                if (Has(jr.walk, k, c) || Has(jr.stand, k, c) || Has(jr.inspect, k, c) || Has(jr.surprise, k, c)) return k;
+            return -1;
+        }
+        static bool Has(AnimationClip[] a, int k, AnimationClip c) => a != null && a.Length > k && a[k] == c;
 
         static void SetMag(JudgeRig jr, int i, bool on)
         {
@@ -231,9 +247,16 @@ namespace Day113
 
         static IEnumerator Wait(float s, Func<bool> skip) { float t = 0; while (t < s && !skip()) { t += Time.deltaTime; yield return null; } }
 
-        static IEnumerator Typewriter(Label l, string s, Func<bool> skip)
+        /// 文字送り。voice があれば2文字ごとに「ポ」と鳴らす（記号・空白では鳴らさない）
+        static IEnumerator Typewriter(Label l, string s, Func<bool> skip, Action voice = null)
         {
-            for (int i = 1; i <= s.Length && !skip(); i++) { l.text = s.Substring(0, i); yield return new WaitForSeconds(.035f); }
+            int said = 0;
+            for (int i = 1; i <= s.Length && !skip(); i++)
+            {
+                l.text = s.Substring(0, i); char ch = s[i - 1];
+                if (voice != null && !char.IsWhiteSpace(ch) && "…、。！？!?〜ー「」・".IndexOf(ch) < 0 && (said++ % 2 == 0)) voice();
+                yield return new WaitForSeconds(.045f);
+            }
             l.text = s;
         }
 
